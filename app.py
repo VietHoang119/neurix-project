@@ -28,20 +28,27 @@ SUMMARIZATION_URL = "https://api-inference.huggingface.co/models/sshleifer/disti
 
 def summarize(text: str) -> str:
     """Summarize input text via Hugging Face Inference API using requests."""
-    payload = {"inputs": text}
-    response = requests.post(SUMMARIZATION_URL, headers=HF_HEADERS, json=payload)
-    response.raise_for_status()
-    data = response.json()
-    # data format: [{'summary_text': '...'}]
-    return data[0].get('summary_text', '').strip()
+    try:
+        payload = {"inputs": text}
+        response = requests.post(SUMMARIZATION_URL, headers=HF_HEADERS, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        # data format: [{'summary_text': '...'}]
+        return data[0].get('summary_text', '').strip()
+    except requests.exceptions.RequestException as e:
+        st.error(f"Summarization API error: {e}")
+        # Fallback: return original text or truncated
+        return text if len(text) < 200 else text[:200] + "..."
 
 
 def extract_keys(text: str, top_k: int = 8) -> list[str]:
     """Naive keyword extraction: top frequent words longer than 4 chars."""
     words = [w.strip('.,!?:;"\'') for w in text.lower().split()]
-    stopwords = set(["that","with","this","about","after","before","where","which","while",
-                     "there","their","would","could","should","your","from","have","just",
-                     "they","them","what","when"])
+    stopwords = set([
+        "that","with","this","about","after","before","where","which","while",
+        "there","their","would","could","should","your","from","have","just",
+        "they","them","what","when"
+    ])
     candidates = [w for w in words if len(w) > 4 and w not in stopwords]
     freq = Counter(candidates)
     return [w for w,_ in freq.most_common(top_k)]
