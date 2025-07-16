@@ -37,7 +37,6 @@ def summarize(text: str) -> str:
         return data[0].get('summary_text', '').strip()
     except requests.exceptions.RequestException as e:
         st.error(f"Summarization API error: {e}")
-        # Fallback: return original text or truncated
         return text if len(text) < 200 else text[:200] + "..."
 
 
@@ -55,17 +54,37 @@ def extract_keys(text: str, top_k: int = 8) -> list[str]:
 
 # ---------------------- Streamlit UI ----------------------
 st.set_page_config(page_title="Neurix MVP", layout="wide")
+
+# Display graph always at top if nodes exist
+def render_graph(nodes):
+    g = net.Network(height="400px", width="100%", notebook=True)
+    for n in nodes:
+        label = n.get('summary', '')[:50]  # natural label from summary
+        g.add_node(n['id'], label=label)
+    for i, ni in enumerate(nodes):
+        for nj in nodes[i+1:]:
+            if set(ni['keys']) & set(nj['keys']):
+                g.add_edge(ni['id'], nj['id'])
+    g.save_graph('graph.html')
+    html = open('graph.html', 'r', encoding='utf-8').read()
+    st.subheader("🔗 Knowledge Graph")
+    st.components.v1.html(html, height=400)
+
+# Retrieve any existing nodes
+nodes = st.session_state.get("nodes", [])
+if nodes:
+    render_graph(nodes)
+
 st.title("🧠 Neurix MVP — Digital Brain Demo")
 
-# Tabs for note vs file
+# Input area
 tab1, tab2 = st.tabs(["📝 Write Note", "📂 Upload File"])
 with tab1:
     user_text = st.text_area("Enter your note:", height=200)
 with tab2:
     uploaded = st.file_uploader("Upload PDF/DOCX/TXT or image", type=["pdf","docx","txt","png","jpg"])
 
-if st.button("▶️ Process to Create Node"):
-    # Read content
+if st.button("▶️ Start Your Node"):
     if uploaded:
         if uploaded.type.startswith("image/"):
             text = "OCR not implemented - placeholder"
@@ -78,51 +97,27 @@ if st.button("▶️ Process to Create Node"):
     else:
         text = user_text
 
-    # Summarize input
+    # Process
     with st.spinner("⏳ Summarizing..."):
         summary = summarize(text)
-    # Extract keys
     with st.spinner("🔑 Extracting keys..."):
         keys = extract_keys(summary)
 
-    # Create node object
     node = {
         "id": str(uuid.uuid4()),
         "summary": summary,
         "content": text,
         "keys": keys,
-        "metadata": {
-            "created_at": st.session_state.get("now", ""),
-            "source": uploaded.name if uploaded else "user_note"
-        },
+        "metadata": {"created_at": st.session_state.get("now", ""), "source": uploaded.name if uploaded else "user_note"},
         "is_public": False
     }
-    st.subheader("Generated Node")
-    st.json(node)
-
-    # Save node in session
+    # Save to session and Supabase
     st.session_state.setdefault("nodes", []).append(node)
-
-    # Insert into Supabase
     sb.table("nodes").insert(node).execute()
-    st.success("Node saved to Supabase!")
+    st.success("Node created and saved!")
 
-# Display knowledge graph if nodes exist
-nodes = st.session_state.get("nodes", [])
-if nodes:
-    g = net.Network(height="600px", width="100%", notebook=True)
-    # Add nodes
-    for n in nodes:
-        g.add_node(n["id"], label=n["summary"][:30] + "...")
-    # Add edges for shared keys
-    for i, ni in enumerate(nodes):
-        for nj in nodes[i+1:]:
-            if set(ni["keys"]) & set(nj["keys"]):
-                g.add_edge(ni["id"], nj["id"])
-    g.show("graph.html")
-    st.subheader("🔗 Knowledge Graph")
-    html = open("graph.html", "r", encoding="utf-8").read()
-    st.components.v1.html(html, height=600)
+    # Re-render graph
+    render_graph(st.session_state["nodes"])
 
 # Footer
 st.markdown("---")
