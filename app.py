@@ -1,9 +1,8 @@
-# app.py - Neurix MVP Demo using Streamlit + Hugging Face + Supabase
+# app.py - Neurix MVP Demo using Streamlit + Hugging Face InferenceApi + Supabase
 
-import os
 import uuid
 import streamlit as st
-from huggingface_hub import InferenceClient
+from huggingface_hub import InferenceApi
 from supabase import create_client
 import pyvis.network as net
 
@@ -19,30 +18,25 @@ if not HF_TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
     st.stop()
 
 # Initialize clients
-hf_client = InferenceClient(token=HF_TOKEN)
+summarizer = InferenceApi(repo_id="sshleifer/distilbart-cnn-12-6", token=HF_TOKEN)
+keywordizer = InferenceApi(repo_id="pszemraj/keyword-extractor", token=HF_TOKEN)
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ---------------------- Helper Functions ----------------------
 
 def summarize(text: str) -> str:
-    """Summarize input text via HF text-generation API."""
-    res = hf_client.text_generation(
-        model="sshleifer/distilbart-cnn-12-6",
-        inputs=text,
-        parameters={"max_new_tokens": 150}
-    )
-    return res[0]["generated_text"].strip()
+    """Summarize input text via Hugging Face InferenceApi."""
+    # Call InferenceApi with text as positional arg
+    out = summarizer(text)
+    # out is a list of strings (summaries)
+    return out[0].strip()
 
 
-
-def extract_keys(text: str, top_k: int = 8) -> list:
-    """Extract keywords via a HF keyword-extraction model."""
-    res = hf_client.text_generation(
-        model="pszemraj/keyword-extractor",
-        inputs=text,
-        parameters={"max_new_tokens": top_k * 2}
-    )
-    keys = res[0]["generated_text"].split(", ")
+def extract_keys(text: str, top_k: int = 8) -> list[str]:
+    """Extract keywords via Hugging Face keyword-extraction InferenceApi."""
+    out = keywordizer(text)
+    # model returns a comma-separated string of keywords
+    keys = out[0].split(", ")
     return keys[:top_k]
 
 # ---------------------- Streamlit UI ----------------------
@@ -70,14 +64,14 @@ if st.button("▶️ Process to Create Node"):
     else:
         text = user_text
 
-    # Summarize
+    # Summarize input
     with st.spinner("⏳ Summarizing..."):
         summary = summarize(text)
     # Extract keys
     with st.spinner("🔑 Extracting keys..."):
         keys = extract_keys(summary)
 
-    # Create node
+    # Create node object
     node = {
         "id": str(uuid.uuid4()),
         "summary": summary,
@@ -92,25 +86,26 @@ if st.button("▶️ Process to Create Node"):
     st.subheader("Generated Node")
     st.json(node)
 
-    # Save node locally in session
+    # Save node in session
     st.session_state.setdefault("nodes", []).append(node)
 
     # Insert into Supabase
     sb.table("nodes").insert(node).execute()
     st.success("Node saved to Supabase!")
 
-# Display graph if nodes exist
+# Display knowledge graph if nodes exist
 nodes = st.session_state.get("nodes", [])
 if nodes:
     g = net.Network(height="600px", width="100%", notebook=True)
-    # add nodes
+    # Add nodes
     for n in nodes:
         g.add_node(n["id"], label=n["summary"][:30] + "...")
-    # add edges on shared keys
+    # Add edges for shared keys
     for i, ni in enumerate(nodes):
         for nj in nodes[i+1:]:
             if set(ni["keys"]) & set(nj["keys"]):
                 g.add_edge(ni["id"], nj["id"])
+    # Render and display graph
     g.show("graph.html")
     st.subheader("🔗 Knowledge Graph")
     html = open("graph.html", "r", encoding="utf-8").read()
