@@ -5,9 +5,9 @@ import streamlit as st
 from huggingface_hub import InferenceApi
 from supabase import create_client
 import pyvis.network as net
+from collections import Counter
 
 # ---------------------- Configuration ----------------------
-# Load secrets from Streamlit (local .streamlit/secrets.toml or Cloud UI)
 config = st.secrets.get("general", st.secrets)
 HF_TOKEN = config.get("HF_TOKEN")
 SUPABASE_URL = config.get("SUPABASE_URL")
@@ -19,25 +19,26 @@ if not HF_TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
 
 # Initialize clients
 summarizer = InferenceApi(repo_id="sshleifer/distilbart-cnn-12-6", token=HF_TOKEN)
-keywordizer = InferenceApi(repo_id="pszemraj/keyword-extractor", token=HF_TOKEN)
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ---------------------- Helper Functions ----------------------
 
 def summarize(text: str) -> str:
     """Summarize input text via Hugging Face InferenceApi."""
-    # Call InferenceApi with text as positional arg
     out = summarizer(text)
-    # out is a list of strings (summaries)
     return out[0].strip()
 
 
 def extract_keys(text: str, top_k: int = 8) -> list[str]:
-    """Extract keywords via Hugging Face keyword-extraction InferenceApi."""
-    out = keywordizer(text)
-    # model returns a comma-separated string of keywords
-    keys = out[0].split(", ")
-    return keys[:top_k]
+    """Naive keyword extraction: top frequent words longer than 4 chars."""
+    # Lowercase and split
+    words = [w.strip('.,!?:;"\'') for w in text.lower().split()]
+    # Filter short and stopwords
+    stopwords = set(["that","with","this","about","after","before","where","which","while","there","their","would","could","should","your","from","have","just","they","them","what","when"])
+    candidates = [w for w in words if len(w) > 4 and w not in stopwords]
+    freq = Counter(candidates)
+    keys = [w for w,_ in freq.most_common(top_k)]
+    return keys
 
 # ---------------------- Streamlit UI ----------------------
 st.set_page_config(page_title="Neurix MVP", layout="wide")
@@ -105,7 +106,6 @@ if nodes:
         for nj in nodes[i+1:]:
             if set(ni["keys"]) & set(nj["keys"]):
                 g.add_edge(ni["id"], nj["id"])
-    # Render and display graph
     g.show("graph.html")
     st.subheader("🔗 Knowledge Graph")
     html = open("graph.html", "r", encoding="utf-8").read()
