@@ -25,9 +25,16 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ---------------------- Helper Functions ----------------------
 
 def summarize(text: str) -> str:
-    """Summarize input text via Hugging Face inference API."""
-    res = hf_client.summarization(model="facebook/bart-large-cnn", inputs=text)
-    return res[0]["summary_text"]
+    """Summarize input text via HF text-generation API."""
+    prompt = "summarize: " + text
+    res = hf_client.text_generation(
+        model="facebook/bart-large-cnn",
+        inputs=prompt,
+        parameters={"max_new_tokens": 200}
+    )
+    # Kết quả có dạng [{"generated_text": "summarize: ..."}]
+    return res[0]["generated_text"].replace("summarize:", "").strip()
+
 
 def extract_keys(text: str, top_k: int = 8) -> list:
     """Extract keywords via a HF keyword-extraction model."""
