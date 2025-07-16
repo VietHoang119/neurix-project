@@ -26,14 +26,13 @@ sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def summarize(text: str) -> str:
     """Summarize input text via HF text-generation API."""
-    prompt = "summarize: " + text
     res = hf_client.text_generation(
-        model="facebook/bart-large-cnn",
-        inputs=prompt,
-        parameters={"max_new_tokens": 200}
+        model="sshleifer/distilbart-cnn-12-6",
+        inputs=text,
+        parameters={"max_new_tokens": 150}
     )
-    # Kết quả có dạng [{"generated_text": "summarize: ..."}]
-    return res[0]["generated_text"].replace("summarize:", "").strip()
+    return res[0]["generated_text"].strip()
+
 
 
 def extract_keys(text: str, top_k: int = 8) -> list:
