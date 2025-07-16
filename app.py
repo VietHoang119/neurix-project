@@ -1,8 +1,8 @@
-# app.py - Neurix MVP Demo using Streamlit + Hugging Face InferenceApi + Supabase
+# app.py - Neurix MVP Demo using Streamlit + Hugging Face Inference API (requests) + Supabase
 
 import uuid
 import streamlit as st
-from huggingface_hub import InferenceApi
+import requests
 from supabase import create_client
 import pyvis.network as net
 from collections import Counter
@@ -17,28 +17,34 @@ if not HF_TOKEN or not SUPABASE_URL or not SUPABASE_KEY:
     st.error("❗ Missing one of HF_TOKEN, SUPABASE_URL, SUPABASE_KEY in Streamlit secrets.")
     st.stop()
 
-# Initialize clients
-summarizer = InferenceApi(repo_id="sshleifer/distilbart-cnn-12-6", token=HF_TOKEN)
+# Setup Supabase client
 sb = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# HF Inference API headers & endpoint
+HF_HEADERS = {"Authorization": f"Bearer {HF_TOKEN}"}
+SUMMARIZATION_URL = "https://api-inference.huggingface.co/models/sshleifer/distilbart-cnn-12-6"
 
 # ---------------------- Helper Functions ----------------------
 
 def summarize(text: str) -> str:
-    """Summarize input text via Hugging Face InferenceApi."""
-    out = summarizer(text)
-    return out[0].strip()
+    """Summarize input text via Hugging Face Inference API using requests."""
+    payload = {"inputs": text}
+    response = requests.post(SUMMARIZATION_URL, headers=HF_HEADERS, json=payload)
+    response.raise_for_status()
+    data = response.json()
+    # data format: [{'summary_text': '...'}]
+    return data[0].get('summary_text', '').strip()
 
 
 def extract_keys(text: str, top_k: int = 8) -> list[str]:
     """Naive keyword extraction: top frequent words longer than 4 chars."""
-    # Lowercase and split
     words = [w.strip('.,!?:;"\'') for w in text.lower().split()]
-    # Filter short and stopwords
-    stopwords = set(["that","with","this","about","after","before","where","which","while","there","their","would","could","should","your","from","have","just","they","them","what","when"])
+    stopwords = set(["that","with","this","about","after","before","where","which","while",
+                     "there","their","would","could","should","your","from","have","just",
+                     "they","them","what","when"])
     candidates = [w for w in words if len(w) > 4 and w not in stopwords]
     freq = Counter(candidates)
-    keys = [w for w,_ in freq.most_common(top_k)]
-    return keys
+    return [w for w,_ in freq.most_common(top_k)]
 
 # ---------------------- Streamlit UI ----------------------
 st.set_page_config(page_title="Neurix MVP", layout="wide")
