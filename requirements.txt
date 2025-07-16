@@ -1,4 +1,4 @@
 streamlit
-supabase-hub
+supabase
 huggingface-hub
 pyvis
